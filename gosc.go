@@ -10,20 +10,28 @@ import (
 )
 
 type OscResponse struct {
-  Voice int32
-  Vol float32
-  Pitch float32
+    Voice int32
+    Vol float32
+    Pitch float32
 }
 
-func oscListen(responseChannel chan<-OscResponse, sock *net.UDPConn) {
-    //var udpBuf [1024]byte
-    //TODO: do something with incoming UDP packets from controller
+//The UDP listen loop
+func oscListen(responseChannel chan OscResponse, sock *net.UDPConn) {
+    doLog( "entering OSC packet listen loop" )
+    var buf []byte
+    for {
+        sock.ReadFromUDP(buf)
+        doLog("TODO: decode packet")
+    }
 }
 
-func generateNoise(responseChannel chan<-OscResponse) {
+//Write audio to the out channel
+func generateNoise(responseChannel chan OscResponse) {
+    doLog( "generating audio" )
     var t float64 = 0
     file := os.Stdout
     data := new(bytes.Buffer)
+    sample := 0
     for {
         //TODO: check for UDP packets and send data in response
         data.Reset()
@@ -32,27 +40,47 @@ func generateNoise(responseChannel chan<-OscResponse) {
         binary.Write(data, binary.LittleEndian, l)
         binary.Write(data, binary.LittleEndian, r)
         file.Write(data.Bytes())
-        file.Sync()
         t = t + 0.01
+        if sample == 255 {
+          sample = -1
+          file.Sync()
+        }
+        sample = sample + 1
     }
+}
+
+func udpListen(name string) (sock *net.UDPConn,err error) {
+    addr, erru := net.ResolveUDPAddr("udp",name)
+    err = erru
+    if err == nil {
+        sock, err = net.ListenUDP("udp",addr)
+        if err == nil {
+            return sock,err
+        }
+    } 
+    doLog("could not listen on "+name)
+    return nil,err
+}
+
+func doLog(msg string) {
+    os.Stderr.WriteString(msg+"\n")
+    os.Stderr.Sync()
 }
 
 func main() {
     flag.Parse()
     args :=  flag.Args()
-
-    //Start listening on our UDP port and make noise in response
-    addr, err := net.ResolveUDPAddr("udp",args[0])
-    if err == nil {
-        sock, erru := net.ListenUDP("udp",addr)
-        if erru == nil {
+    if len(args) > 0 {
+        addr := args[0]
+        sock,err := udpListen(addr)
+        if err == nil {
             responseChannel := make(chan OscResponse)
-            go oscListen(responseChannel,sock)
+            go oscListen(responseChannel, sock)
             generateNoise(responseChannel)
         } else {
-            os.Stderr.WriteString("could not listen")
+            doLog(err.Error())
         }
     } else {
-      os.Stderr.WriteString("could not open address")
+        doLog("need an arg like 0.0.0.0:9999 for a udp port and bind addr")
     }
 }
